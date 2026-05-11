@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+results/
+*.json
+*.jsonl
+logs/
+HF_HOME/
+.cache/
+.DS_Store
+*.egg-info/
