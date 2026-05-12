@@ -33,6 +33,7 @@ rcm_data = {
 
 readme = f"""---
 license: apache-2.0
+base_model: lablab-ai-amd-developer-hackathon/CyberSecQwen-4B
 tags:
 - qwen3
 - cybersecurity
