@@ -18,17 +18,17 @@ mcq = {
     "correct": 7401, "total": 12500,
 }
 
-# CTI-RCM: from corrected eval (first-CWE extraction, not last-CWE)
+# CTI-RCM: from corrected eval (first-CWE extraction) with v2 quantization
 rcm_data = {
-    "accuracy": 0.5558, "std": 0.0040, "delta_vs_fp16": -0.1106,
+    "accuracy": 0.5814, "std": 0.0025, "delta_vs_fp16": -0.0850,
     "trials": [
-        {"seed": 42, "accuracy": 0.552, "correct": 552},
-        {"seed": 43, "accuracy": 0.550, "correct": 550},
-        {"seed": 44, "accuracy": 0.560, "correct": 560},
-        {"seed": 45, "accuracy": 0.558, "correct": 558},
-        {"seed": 46, "accuracy": 0.559, "correct": 559},
+        {"seed": 42, "accuracy": 0.579, "correct": 579},
+        {"seed": 43, "accuracy": 0.583, "correct": 583},
+        {"seed": 44, "accuracy": 0.579, "correct": 579},
+        {"seed": 45, "accuracy": 0.584, "correct": 584},
+        {"seed": 46, "accuracy": 0.582, "correct": 582},
     ],
-    "correct": 2779, "total": 5000,
+    "correct": 2907, "total": 5000,
 }
 
 readme = f"""---
