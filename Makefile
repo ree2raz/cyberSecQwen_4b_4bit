@@ -1,13 +1,13 @@
 .PHONY: run run-mcq run-rcm download-results clean
 
 run:
-	modal run modal_cti_eval.py --task all
+	modal run --detach modal_eval_vllm.py --task all
 
 run-mcq:
-	modal run modal_cti_eval.py --task cti-mcq
+	modal run --detach modal_eval_vllm.py --task cti-mcq
 
 run-rcm:
-	modal run modal_cti_eval.py --task cti-rcm
+	modal run --detach modal_eval_vllm.py --task cti-rcm
 
 download-results:
 	mkdir -p results

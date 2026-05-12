@@ -32,6 +32,7 @@ import torch
 
 app = modal.App("cybersecqwen-eval")
 
+
 DATASET_ID = "AI4Sec/cti-bench"
 MODEL_ID = "ree2raz/CyberSecQwen-4B-4bit"
 
@@ -47,6 +48,9 @@ REF_SCORES = {
     "cti-mcq": {"accuracy": 0.5868, "std": 0.0029},
     "cti-rcm": {"accuracy": 0.6664, "std": 0.0023},
 }
+
+hf_cache = modal.Volume.from_name("inference-bench-hf-cache", create_if_missing=True)
+results_vol = modal.Volume.from_name(EVAL_VOLUME_NAME, create_if_missing=True)
 
 
 @dataclass
@@ -85,7 +89,10 @@ def make_image():
             "scipy>=1.11.0",
         )
         .pip_install("huggingface_hub>=0.20.0")
-        .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+        .env({
+            "HF_HOME": "/hf_cache",
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+        })
     )
 
 
@@ -135,11 +142,10 @@ def format_prompt(tokenizer, messages: list[dict]) -> str:
     image=make_image(),
     gpu=GPU_TYPE,
     timeout=60 * 60 * 4,
-    volumes={"/results": modal.Volume.from_name(EVAL_VOLUME_NAME, create_if_missing=True)},
-    secrets=[
-        modal.Secret.from_name("huggingface", namespace=modal.SecretNamespace.GLOBAL)
-        if os.path.exists("/root/.modal.toml") else modal.Secret.from_name("huggingface")
-    ],
+    volumes={
+        "/results": results_vol,
+        "/hf_cache": hf_cache,
+    },
 )
 class CTIEval:
     @modal.enter()
@@ -167,9 +173,9 @@ class CTIEval:
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"
 
         print(f"[start] Model loaded in {time.perf_counter() - t0:.1f}s")
-        print(f"[start] Device map: {self.model.hf_device_map}")
 
     @modal.exit()
     def cleanup(self):
@@ -268,78 +274,86 @@ class CTIEval:
         }
 
     @modal.method()
-    def run_task(self, task: str) -> dict:
-        """Run all 5 trials for one task."""
-        print(f"[eval] Task: {task}")
-        items = self._load_dataset(task)
-        print(f"[eval] Loaded {len(items)} items")
-
-        all_results = []
-        for trial_idx in range(NUM_TRIALS):
-            seed = 42 + trial_idx
-            print(f"[eval] Trial {trial_idx + 1}/{NUM_TRIALS} (seed={seed}) ...")
-            t0 = time.perf_counter()
-            trial = self._run_trial(task, items, seed)
-            elapsed = time.perf_counter() - t0
-            print(
-                f"[eval]   Trial {trial_idx + 1}: acc={trial['accuracy']:.4f} "
-                f"({trial['correct']}/{trial['total']}), parseable={trial['parseable']}, "
-                f"took={elapsed:.1f}s"
-            )
-            all_results.append(trial)
-
-        accuracies = [t["accuracy"] for t in all_results]
+    def run_all(self, tasks: list[str]) -> dict:
+        """Run all tasks + trials in a single container. Model loaded once."""
         import numpy as np
-        mean_acc = float(np.mean(accuracies))
-        std_acc = float(np.std(accuracies))
-        total_correct = sum(t["correct"] for t in all_results)
-        total_items = sum(t["total"] for t in all_results)
-        total_parseable = sum(t["parseable"] for t in all_results)
 
-        eval_result = EvalResult(
-            task=task,
-            accuracy=mean_acc,
-            correct=total_correct,
-            total=total_items,
-            std=std_acc,
-            parseable_rate=total_parseable / total_items,
-            parseable=total_parseable,
-            trial_results=[
-                {"seed": t["seed"], "accuracy": t["accuracy"], "correct": t["correct"], "total": t["total"]}
-                for t in all_results
-            ],
-        )
-
-        ref = REF_SCORES.get(task, {})
-        ref_acc = ref.get("accuracy", None)
-        ref_std = ref.get("std", None)
-        delta_vs_ref = mean_acc - ref_acc if ref_acc is not None else None
-
-        print(f"\n[result] {task}: {mean_acc:.4f} ± {std_acc:.4f}")
-        if ref_acc is not None:
-            print(f"[result]   vs FP16 ref ({ref_acc:.4f} ± {ref_std:.4f}): Δ={delta_vs_ref:+.4f}")
-        print(f"[result]   parseable rate: {eval_result.parseable_rate:.4f}")
-
-        output = {
-            **eval_result.to_dict(),
+        results: dict[str, Any] = {
             "model": MODEL_ID,
-            "protocol": {
-                "temperature": TEMPERATURE,
-                "max_tokens": MAX_TOKENS,
-                "num_trials": NUM_TRIALS,
-                "batch_size": BATCH_SIZE,
-                "prompt_source": "dataset_Prompt_column",
-                "system_prompt": "none",
-                "chat_template": "applied",
-            },
-            "reference_fp16": {
-                "accuracy": ref_acc,
-                "std": ref_std,
-            },
-            "delta_vs_fp16": round(delta_vs_ref, 4) if delta_vs_ref is not None else None,
+            "quantization": "4-bit NF4 (bitsandbytes)",
+            "gpu": GPU_TYPE,
+            "tasks": {},
         }
 
-        return output
+        for task in tasks:
+            print(f"[eval] Task: {task}")
+            items = self._load_dataset(task)
+            print(f"[eval] Loaded {len(items)} items")
+
+            all_results = []
+            for trial_idx in range(NUM_TRIALS):
+                seed = 42 + trial_idx
+                print(f"[eval] Trial {trial_idx + 1}/{NUM_TRIALS} (seed={seed}) ...")
+                t0 = time.perf_counter()
+                trial = self._run_trial(task, items, seed)
+                elapsed = time.perf_counter() - t0
+                print(
+                    f"[eval]   Trial {trial_idx + 1}: acc={trial['accuracy']:.4f} "
+                    f"({trial['correct']}/{trial['total']}), parseable={trial['parseable']}, "
+                    f"took={elapsed:.1f}s"
+                )
+                all_results.append(trial)
+
+            accuracies = [t["accuracy"] for t in all_results]
+            mean_acc = float(np.mean(accuracies))
+            std_acc = float(np.std(accuracies))
+            total_correct = sum(t["correct"] for t in all_results)
+            total_items = sum(t["total"] for t in all_results)
+            total_parseable = sum(t["parseable"] for t in all_results)
+
+            ref = REF_SCORES.get(task, {})
+            ref_acc = ref.get("accuracy")
+            ref_std = ref.get("std")
+            delta_vs_ref = mean_acc - ref_acc if ref_acc is not None else None
+
+            print(f"[result] {task}: {mean_acc:.4f} ± {std_acc:.4f}")
+            if ref_acc is not None:
+                print(f"[result]   vs FP16 ref ({ref_acc:.4f} ± {ref_std:.4f}): Δ={delta_vs_ref:+.4f}")
+            print(f"[result]   parseable rate: {total_parseable / total_items:.4f}")
+
+            results["tasks"][task] = {
+                "task": task,
+                "accuracy": round(mean_acc, 4),
+                "correct": total_correct,
+                "total": total_items,
+                "std": round(std_acc, 4),
+                "parseable_rate": round(total_parseable / total_items, 4),
+                "parseable": total_parseable,
+                "trial_results": [
+                    {"seed": t["seed"], "accuracy": t["accuracy"], "correct": t["correct"], "total": t["total"]}
+                    for t in all_results
+                ],
+                "model": MODEL_ID,
+                "protocol": {
+                    "temperature": TEMPERATURE,
+                    "max_tokens": MAX_TOKENS,
+                    "num_trials": NUM_TRIALS,
+                    "batch_size": BATCH_SIZE,
+                    "prompt_source": "dataset_Prompt_column",
+                    "system_prompt": "none",
+                    "chat_template": "applied",
+                },
+                "reference_fp16": {"accuracy": ref_acc, "std": ref_std},
+                "delta_vs_fp16": round(delta_vs_ref, 4) if delta_vs_ref is not None else None,
+            }
+
+        output_path = "/results/eval_results.json"
+        with open(output_path, "w") as f:
+            json.dump(results, f, indent=2)
+        results_vol.commit()
+        print(f"[save] Results saved to {output_path} and committed.")
+
+        return results
 
 
 @app.local_entrypoint()
@@ -366,18 +380,8 @@ def main(task: str = "all"):
     print(f"  Batch size: {BATCH_SIZE}")
     print("=" * 60)
 
-    results: dict[str, Any] = {
-        "model": MODEL_ID,
-        "quantization": "4-bit NF4 (bitsandbytes)",
-        "gpu": GPU_TYPE,
-        "tasks": {},
-    }
-
     bench = CTIEval()
-
-    for t in tasks:
-        task_result = bench.run_task.remote(t)
-        results["tasks"][t] = task_result
+    results = bench.run_all.remote(tasks)
 
     print("\n" + "=" * 60)
     print("FINAL RESULTS")
@@ -388,7 +392,7 @@ def main(task: str = "all"):
     for t in tasks:
         tr = results["tasks"][t]
         ref = REF_SCORES.get(t, {})
-        ref_acc = ref.get("accuracy", None)
+        ref_acc = ref.get("accuracy")
         delta = tr.get("delta_vs_fp16")
         print(
             f"{t:<12} {tr['accuracy']:>11.4f} "
@@ -397,10 +401,4 @@ def main(task: str = "all"):
             f"{tr['std']:>10.4f}"
         )
     print("=" * 60)
-
-    output_path = "/results/eval_results.json"
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"\nResults saved to {output_path}")
-    modal.Volume.from_name(EVAL_VOLUME_NAME, create_if_missing=True).commit()
-    print("Volume committed.")
+    print("\nResults persisted to Modal volume at /results/eval_results.json")
