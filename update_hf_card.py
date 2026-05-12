@@ -75,7 +75,7 @@ Evaluated under the [Foundation-Sec-8B protocol](https://arxiv.org/abs/2504.2103
 
 **Key findings:**
 - **CTI-MCQ**: AWQ 4-bit matches or slightly exceeds FP16 performance (+0.5 points). No measurable accuracy loss.
-- **CTI-RCM**: AWQ 4-bit degrades by {abs(rcm_data['delta_vs_fp16']):.1f} points vs FP16. Parseable rate > 99.8% so answer extraction is working correctly. The model retains correct CWE identification in reasoning but sometimes diverges on final answers. This gap can likely be reduced with more calibration data.
+- **CTI-RCM**: AWQ 4-bit degrades by {abs(rcm_data['delta_vs_fp16'])*100:.1f} percentage points vs FP16. Parseable rate > 99.8% so answer extraction is working correctly. The model retains correct CWE identification in reasoning but sometimes diverges on final answers. This gap can likely be reduced with more calibration data.
 
 ## Trial results
 
@@ -89,7 +89,7 @@ for t in mcq.get("trials", []):
 readme += """
 ### CTI-RCM
 | Trial | Seed | Accuracy |
-|---|---|
+|-------|------|----------|
 """
 for t in rcm_data.get("trials", []):
     readme += f"| {rcm_data['trials'].index(t) + 1} | {t['seed']} | {t['accuracy']:.4f} |\n"
