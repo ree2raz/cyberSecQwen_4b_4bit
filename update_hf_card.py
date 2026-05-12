@@ -57,7 +57,7 @@ pipeline_tag: text-generation
 | Method | AWQ (group_size=128, zero_point=True) |
 | Weight precision | 4-bit |
 | Compute dtype | float16 |
-| Calibration samples | 128 CTI-Bench prompts |
+| Calibration samples | 320 CTI-Bench prompts (256 RCM + 64 MCQ, chat-template formatted) |
 | Quantization tool | autoawq |
 | Calibration hardware | Modal A100 |
 
