@@ -77,9 +77,10 @@ for i, t in enumerate(mcq['trials']):
     readme += f"| {i+1} | {t['seed']} | {t['accuracy']:.4f} |\n"
 
 readme += """
-### CTI-RCM
+### CTI-MCQ
+
 | Trial | Seed | Accuracy |
-|---|---|
+|---|---|---|
 """
 for i, t in enumerate(rcm_data['trials']):
     readme += f"| {i+1} | {t['seed']} | {t['accuracy']:.4f} |\n"
