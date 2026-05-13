@@ -46,10 +46,16 @@ results_vol = modal.Volume.from_name("cybersecqwen-eval-results", create_if_miss
 
 def make_image():
     return (
-        modal.Image.debian_slim(python_version="3.11")
-        .apt_install("curl", "wget")
+        modal.Image.from_registry(
+            "nvidia/cuda:12.4.1-runtime-ubuntu22.04",
+            add_python="3.11",
+        )
+        .apt_install("curl", "libcurl4", "libgomp1")
         .pip_install("httpx>=0.27", "numpy>=1.26", "datasets>=2.18.0", "pyyaml>=6.0")
-        .env({"HF_HOME": "/hf_cache"})
+        .env({
+            "HF_HOME": "/hf_cache",
+            "LD_LIBRARY_PATH": "/hf_cache/llamacpp",
+        })
     )
 
 
@@ -93,19 +99,20 @@ def wait_for_server(timeout: int = 300, interval: int = 3) -> bool:
 
 def download_llama_server():
     """Download pre-built llama.cpp server binary."""
-    import platform
     import stat
     import tarfile
 
     bin_dir = "/hf_cache/llamacpp"
     os.makedirs(bin_dir, exist_ok=True)
 
-    server_bin = os.path.join(bin_dir, "llama-server")
-    if os.path.exists(server_bin):
-        os.chmod(server_bin, os.stat(server_bin).st_mode | stat.S_IEXEC)
-        return server_bin
+    # Search for existing binary first
+    for root, dirs, files in os.walk(bin_dir):
+        if "llama-server" in files:
+            server_bin = os.path.join(root, "llama-server")
+            os.chmod(server_bin, os.stat(server_bin).st_mode | stat.S_IEXEC)
+            return server_bin
 
-    # Download latest pre-built binary from llama.cpp releases
+    # Download pre-built binary from llama.cpp releases
     tag = "b4933"
     url = f"https://github.com/ggerganov/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-x64.tar.gz"
     tarball = "/tmp/llama.tar.gz"
@@ -114,16 +121,16 @@ def download_llama_server():
     with tarfile.open(tarball, "r:gz") as tar:
         tar.extractall(path=bin_dir, filter="data")
 
-    server_bin = os.path.join(bin_dir, "build", "bin", "llama-server")
-    if not os.path.exists(server_bin):
-        # try alternate path
-        for root, dirs, files in os.walk(bin_dir):
-            if "llama-server" in files:
-                server_bin = os.path.join(root, "llama-server")
-                break
+    for root, dirs, files in os.walk(bin_dir):
+        if "llama-server" in files:
+            server_bin = os.path.join(root, "llama-server")
+            os.chmod(server_bin, os.stat(server_bin).st_mode | stat.S_IEXEC)
+            # Set LD_LIBRARY_PATH for shared libs
+            lib_dir = os.path.dirname(server_bin)
+            os.environ["LD_LIBRARY_PATH"] = lib_dir
+            return server_bin
 
-    os.chmod(server_bin, os.stat(server_bin).st_mode | stat.S_IEXEC)
-    return server_bin
+    raise FileNotFoundError("llama-server binary not found in release tarball")
 
 
 @app.cls(
@@ -136,10 +143,13 @@ def download_llama_server():
 class LlamaEval:
     @modal.enter()
     def start_server(self):
+        import stat
         from huggingface_hub import hf_hub_download
 
-        print("Downloading llama-server binary ...")
-        server_bin = download_llama_server()
+        server_bin = "/hf_cache/llamacpp/llama-server"
+        st = os.stat(server_bin)
+        if not (st.st_mode & stat.S_IEXEC):
+            os.chmod(server_bin, st.st_mode | stat.S_IEXEC)
 
         print(f"Downloading GGUF model: {MODEL_REPO}/{MODEL_FILE} ...")
         gguf_path = hf_hub_download(
