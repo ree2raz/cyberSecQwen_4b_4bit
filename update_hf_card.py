@@ -1,34 +1,23 @@
 #!/usr/bin/env python3
-"""Update HF model card for CyberSecQwen-4B-AWQ with eval results."""
-import json
-
+"""Update HF model card for CyberSecQwen-4B-AWQ with eval results + GGUF comparison."""
 from huggingface_hub import HfApi
 
-# CTI-Bench evaluation results (5 trials each)
-# CTI-MCQ: from full eval run (vLLM AWQ on L4, temp=0.3, concurrency=32)
 mcq = {
     "accuracy": 0.5921, "std": 0.0083, "delta_vs_fp16": 0.0053,
     "trials": [
-        {"seed": 42, "accuracy": 0.6016, "correct": 1504},
-        {"seed": 43, "accuracy": 0.5984, "correct": 1496},
-        {"seed": 44, "accuracy": 0.5936, "correct": 1484},
-        {"seed": 45, "accuracy": 0.5780, "correct": 1445},
-        {"seed": 46, "accuracy": 0.5888, "correct": 1472},
+        {"seed": 42, "accuracy": 0.6016}, {"seed": 43, "accuracy": 0.5984},
+        {"seed": 44, "accuracy": 0.5936}, {"seed": 45, "accuracy": 0.5780},
+        {"seed": 46, "accuracy": 0.5888},
     ],
-    "correct": 7401, "total": 12500,
 }
 
-# CTI-RCM: from corrected eval (first-CWE extraction) with v2 quantization
 rcm_data = {
     "accuracy": 0.5814, "std": 0.0025, "delta_vs_fp16": -0.0850,
     "trials": [
-        {"seed": 42, "accuracy": 0.579, "correct": 579},
-        {"seed": 43, "accuracy": 0.583, "correct": 583},
-        {"seed": 44, "accuracy": 0.579, "correct": 579},
-        {"seed": 45, "accuracy": 0.584, "correct": 584},
-        {"seed": 46, "accuracy": 0.582, "correct": 582},
+        {"seed": 42, "accuracy": 0.579}, {"seed": 43, "accuracy": 0.583},
+        {"seed": 44, "accuracy": 0.579}, {"seed": 45, "accuracy": 0.584},
+        {"seed": 46, "accuracy": 0.582},
     ],
-    "correct": 2907, "total": 5000,
 }
 
 readme = f"""---
@@ -64,19 +53,20 @@ pipeline_tag: text-generation
 
 ## CTI-Bench Evaluation
 
-Evaluated under the [Foundation-Sec-8B protocol](https://arxiv.org/abs/2504.21039) (arXiv:2504.21039):
+Evaluated under the [Foundation-Sec-8B protocol](https://arxiv.org/abs/2504.21039):
 - Temperature 0.3, max_tokens 512, concurrency 32
 - 5 independent trials, zero-shot (no system prompt)
 - vLLM v0.20.1 with awq_marlin kernel on Modal L4 GPU
 
-| Task | AWQ 4-bit | FP16 Reference | Delta |
+| Task | AWQ 4-bit | GGUF Q4_K_M | FP16 Reference |
 |---|---|---|---|
-| CTI-MCQ (2,500 items) | {mcq['accuracy']:.4f} +/- {mcq['std']:.4f} | 0.5868 +/- 0.0029 | {mcq['delta_vs_fp16']:+.4f} |
-| CTI-RCM (1,000 items) | {rcm_data['accuracy']:.4f} +/- {rcm_data['std']:.4f} | 0.6664 +/- 0.0023 | {rcm_data['delta_vs_fp16']:+.4f} |
+| CTI-MCQ (2,500 items) | **{mcq['accuracy']:.4f}** ± {mcq['std']:.4f} | 0.5368 ± 0.0048 | 0.5868 ± 0.0029 |
+| CTI-RCM (1,000 items) | {rcm_data['accuracy']:.4f} ± {rcm_data['std']:.4f} | **0.6254 ± 0.0063** | 0.6664 ± 0.0023 |
 
 **Key findings:**
-- **CTI-MCQ**: AWQ 4-bit matches or slightly exceeds FP16 performance (+0.5 points). No measurable accuracy loss.
-- **CTI-RCM**: AWQ 4-bit degrades by {abs(rcm_data['delta_vs_fp16'])*100:.1f} percentage points vs FP16. Parseable rate > 99.8% so answer extraction is working correctly. The model retains correct CWE identification in reasoning but sometimes diverges on final answers. This gap can likely be reduced with more calibration data.
+- **CTI-MCQ**: AWQ 4-bit matches or slightly exceeds FP16 performance (+0.5 points). Better than GGUF Q4_K_M.
+- **CTI-RCM**: AWQ 4-bit degrades by {abs(rcm_data['delta_vs_fp16'])*100:.1f} percentage points vs FP16. GGUF Q4_K_M does better on this task (-4.1 pts).
+- AWQ is best for MCQ (general language), GGUF is best for RCM (task-specific classification).
 
 ## Trial results
 
@@ -84,18 +74,27 @@ Evaluated under the [Foundation-Sec-8B protocol](https://arxiv.org/abs/2504.2103
 | Trial | Seed | Accuracy |
 |---|---|---|
 """
-for t in mcq.get("trials", []):
-    readme += f"| {mcq['trials'].index(t) + 1} | {t['seed']} | {t['accuracy']:.4f} |\n"
+for i, t in enumerate(mcq['trials']):
+    readme += f"| {i+1} | {t['seed']} | {t['accuracy']:.4f} |\n"
 
 readme += """
 ### CTI-RCM
 | Trial | Seed | Accuracy |
-|-------|------|----------|
+|---|---|
 """
-for t in rcm_data.get("trials", []):
-    readme += f"| {rcm_data['trials'].index(t) + 1} | {t['seed']} | {t['accuracy']:.4f} |\n"
+for i, t in enumerate(rcm_data['trials']):
+    readme += f"| {i+1} | {t['seed']} | {t['accuracy']:.4f} |\n"
 
 readme += """
+## Quantization variants
+
+| Variant | CTI-MCQ | CTI-RCM | Size | Engine |
+|---|---|---|---|---|
+| [AWQ 4-bit](https://huggingface.co/ree2raz/CyberSecQwen-4B-AWQ) | 0.5921 | 0.5814 | 2.7 GB | vLLM |
+| [GGUF Q4_K_M](https://huggingface.co/ree2raz/CyberSecQwen-4B-GGUF) | 0.5368 | 0.6254 | 2.5 GB | llama.cpp |
+
+Choose AWQ for MCQ/general chat, GGUF for vulnerability classification.
+
 ## Usage with vLLM
 
 ```bash
@@ -112,26 +111,25 @@ vllm serve ree2raz/CyberSecQwen-4B-AWQ --quantization awq_marlin --dtype float16
 ## Citation
 
 ```bibtex
-@misc{cybersecqwen2026,
-  title  = {CyberSecQwen-4B: A Compact CTI Specialist Fine-Tuned from Qwen3-4B-Instruct-2507 on AMD MI300X},
-  author = {Mulia, Samuel},
-  year   = {2026},
-  publisher = {Hugging Face},
-  url    = {https://huggingface.co/athena129/CyberSecQwen-4B}
-}
+@misc{{cybersecqwen2026,
+  title  = {{CyberSecQwen-4B: A Compact CTI Specialist Fine-Tuned from Qwen3-4B-Instruct-2507 on AMD MI300X}},
+  author = {{Mulia, Samuel}},
+  year   = {{2026}},
+  publisher = {{Hugging Face}},
+  url    = {{https://huggingface.co/athena129/CyberSecQwen-4B}}
+}}
 ```
 
 ## Evaluation Infrastructure
 
-[GitHub repository](https://github.com/ree2raz/cyberSecQwen_4b_4bit) — Modal scripts for AWQ quantization + vLLM CTI-Bench evaluation.
+[GitHub repository](https://github.com/ree2raz/cyberSecQwen_4b_4bit) — Modal scripts for quantization + evaluation.
 """
 
-print("Uploading README to ree2raz/CyberSecQwen-4B-AWQ ...")
 api = HfApi()
 api.upload_file(
     path_or_fileobj=readme.encode(),
     path_in_repo="README.md",
     repo_id="ree2raz/CyberSecQwen-4B-AWQ",
-    commit_message="Add CTI-Bench evaluation results (AWQ 4-bit vs FP16)",
+    commit_message="Update eval with GGUF comparison; RCM 0.5814, MCQ 0.5921",
 )
-print("Done! Model card updated.")
+print("AWQ model card updated!")
