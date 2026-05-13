@@ -1,0 +1,89 @@
+{
+  "model": "ree2raz/CyberSecQwen-4B-GGUF/cybersecqwen-4b-Q4_K_M.gguf",
+  "quantization": "GGUF Q4_K_M",
+  "gpu": "L4",
+  "protocol": {
+    "temperature": 0.3,
+    "max_tokens": 512,
+    "num_trials": 5,
+    "concurrency": 8,
+    "prompt_source": "dataset_Prompt_column",
+    "system_prompt": "none"
+  },
+  "tasks": {
+    "cti-mcq": {
+      "accuracy": 0.5368,
+      "std": 0.0048,
+      "delta_vs_fp16": -0.05,
+      "trials": [
+        {
+          "seed": 42,
+          "accuracy": 0.542,
+          "correct": 1355,
+          "total": 2500
+        },
+        {
+          "seed": 43,
+          "accuracy": 0.528,
+          "correct": 1320,
+          "total": 2500
+        },
+        {
+          "seed": 44,
+          "accuracy": 0.536,
+          "correct": 1340,
+          "total": 2500
+        },
+        {
+          "seed": 45,
+          "accuracy": 0.5392,
+          "correct": 1348,
+          "total": 2500
+        },
+        {
+          "seed": 46,
+          "accuracy": 0.5388,
+          "correct": 1347,
+          "total": 2500
+        }
+      ]
+    },
+    "cti-rcm": {
+      "accuracy": 0.6254,
+      "std": 0.0063,
+      "delta_vs_fp16": -0.041,
+      "trials": [
+        {
+          "seed": 42,
+          "accuracy": 0.627,
+          "correct": 627,
+          "total": 1000
+        },
+        {
+          "seed": 43,
+          "accuracy": 0.63,
+          "correct": 630,
+          "total": 1000
+        },
+        {
+          "seed": 44,
+          "accuracy": 0.627,
+          "correct": 627,
+          "total": 1000
+        },
+        {
+          "seed": 45,
+          "accuracy": 0.63,
+          "correct": 630,
+          "total": 1000
+        },
+        {
+          "seed": 46,
+          "accuracy": 0.613,
+          "correct": 613,
+          "total": 1000
+        }
+      ]
+    }
+  }
+}
